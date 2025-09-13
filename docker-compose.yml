@@ -5,8 +5,8 @@ services:
       - 5433:5432
     environment:
       POSTGRES_DB: postgresdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     restart: unless-stopped
     volumes:
