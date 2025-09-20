@@ -1,12 +1,23 @@
 services:
+  streamlit-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8501:8501
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./src/chatbot-ui:/app/src/chatbot-ui
   postgres:
     image: postgres:16-alpine
     ports:
       - 5433:5432
     environment:
       POSTGRES_DB: postgresdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     restart: unless-stopped
     volumes:
