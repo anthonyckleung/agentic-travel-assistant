@@ -1,8 +1,18 @@
 import streamlit as st
+import psycopg2
 from openai import OpenAI
-
+from retrieval import rag_pipeline
 
 from core.config import config
+
+conn = psycopg2.connect(
+    dbname="postgresdb",
+    user=config.POSTGRES_USERNAME,
+    password=config.POSTGRES_PASSWORD,
+    host="host.docker.internal",  # e.g., "localhost"
+    port="5433"        # default PostgreSQL port
+)
+cursor = conn.cursor()
 
 ## Lets create a sidebar with a dropdown for the model list and providers
 with st.sidebar:
@@ -59,6 +69,6 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
 
     with st.chat_message("assistant"):
         # output = run_llm(client, st.session_state.messages)
-        # output = rag_pipeline(prompt, qdrant_client)
-        st.write("Testing")
-    # st.session_state.messages.append({"role": "assistant", "content": output})
+        output = rag_pipeline(prompt, cursor)
+        st.write(output["answer"])
+    st.session_state.messages.append({"role": "assistant", "content": output})
