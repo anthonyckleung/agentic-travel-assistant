@@ -5,11 +5,11 @@ import sqlvalidator
 # from qdrant_client import QdrantClient
 # from langsmith import traceable, get_current_run_tree
 from pydantic import BaseModel
-from core.config import config
+from chatbot_ui.core.config import config
 
 
 class SQLQuery(BaseModel):
-    query: str
+    sql_command: str
 
 
 class RAGGenerationResponse(BaseModel):
@@ -26,10 +26,13 @@ def is_valid_sql(query):
 
 def build_sql_generate_prompt(user_query):
     prompt = f"""
+    You are a PostgreSQL expert. You only respond with PostgreSQL commands for the question asked by the user.
+
     You are given a database schema:
         Schema: public
         Table: us_attractions
         Columns:
+        - id INTEGER PRIMARY KEY
         - name VARCHAR(250)
         - main_category VARCHAR(250)
         - rating REAL
@@ -45,13 +48,16 @@ def build_sql_generate_prompt(user_query):
         - weighted_average REAL
         - all_cities VARCHAR(250)
 
-    The values under the country column are all "USA".    
+    The us_attractions table only has information for USA only. The values under the country column are all 'USA'. 
 
-    Translate the following user question into SQL query statement:
+    Translate the following user question into PostgreSQL query statement:
 
     "{user_query}"
-
-    Write SQL query using the "public" schema for all tables (e.g., public.us_attraction).
+    Instructions:
+    - Write PostgreSQL query using the "public" schema for all tables (e.g., public.us_attraction).
+    - If the US State label is given in full, search for the abbreviated form in all caps.
+    - Always perform LOWER() on all string type comparisons, filtering, etc.
+    - If you cannot respond a PostgreSQL command respond with 'Sorry, no relevant data was found in the database for your query.'. Don't respond with anything else.
     """
     return prompt
 
@@ -71,14 +77,14 @@ def build_rag_response_prompt(rows, user_question, sql_query):
     return prompt
 
 
-def generate_sql_query(prompt):
+def generate_sql_command(prompt):
     response, _ = client.chat.completions.create_with_completion(
         model="gpt-4.1-mini",
         response_model=SQLQuery,
         messages=[{"role":"user", "content": prompt}],
         temperature=0
     )
-    return response.query
+    return response
 
 
 def retrieve_from_postgres(cursor, sql_query):
@@ -92,24 +98,33 @@ def generate_answer(prompt):
         model="gpt-4.1-mini",
         response_model=RAGGenerationResponse,
         messages=[{"role":"user", "content": prompt}],
-        temperature=0.2
+        temperature=0.
     )
     return response.answer
 
 
 def rag_pipeline(user_question, psycopg_cursor):
+    query_result = list()
     sql_prompt = build_sql_generate_prompt(user_question)
-    sql_query = generate_sql_query(sql_prompt)
-    # print("sql_query")
-    if is_valid_sql(sql_query):
-        query_result = retrieve_from_postgres(psycopg_cursor, sql_query)
-        response_prompt = build_rag_response_prompt(query_result, user_question, sql_query)
-        answer = generate_answer(response_prompt)
+    text2sql_response = generate_sql_command(sql_prompt)
+    print(text2sql_response)
+    if is_valid_sql(text2sql_response.sql_command):
+        query_result = retrieve_from_postgres(psycopg_cursor, text2sql_response.sql_command)
+        formatted_query_result = [", ".join(map(str, row)) for row in query_result]
+        if not query_result:
+            # No data found guardrail
+            answer = "Sorry, no relevant data was found in the database for your query."
+        else:
+            response_prompt = build_rag_response_prompt(query_result, user_question, text2sql_response.sql_command)
+            answer = generate_answer(response_prompt)
     else:
-        answer = sql_query
+        answer = text2sql_response
     
     final_result = {
         "answer": answer,
         "question": user_question,
+        # "retrieved_context_ids": [row[0] for row in query_result],
+        "retrieved_context": formatted_query_result,
+        "generated_sql": text2sql_response.sql_command
     }
     return final_result
