@@ -1,4 +1,4 @@
-# Agentic Travel Assistant
+# Agentic Travel Assistant [WIP]
 
 Travel chatbot that leverages an agentic framework to answer questions about US attraction places and book flights in the US.
 
