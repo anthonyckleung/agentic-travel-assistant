@@ -9,4 +9,7 @@ GRANT ALL PRIVILEGES ON DATABASE postgresdb TO postgres;
 \c postgresdb
 GRANT ALL ON SCHEMA public TO postgres;
 GRANT CREATE ON SCHEMA public TO postgres;
+
+# Enable the pgvector extension in the database
+CREATE EXTENSION IF NOT EXISTS vector;
 EOSQL

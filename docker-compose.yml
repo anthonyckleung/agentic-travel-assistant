@@ -11,7 +11,7 @@ services:
     volumes:
       - ./src/chatbot-ui:/app/src/chatbot-ui
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     ports:
       - 5433:5432
     environment:
