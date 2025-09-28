@@ -1,5 +1,5 @@
-from openai import OpenAI
 import instructor
+import openai
 import psycopg2
 import sqlvalidator
 # from qdrant_client import QdrantClient
@@ -10,55 +10,80 @@ from chatbot_ui.core.config import config
 
 class SQLQuery(BaseModel):
     sql_command: str
+    selected_columns: list
 
 
 class RAGGenerationResponse(BaseModel):
     answer: str
 
 
-client = instructor.from_openai(OpenAI(api_key=config.OPENAI_API_KEY))
+client = instructor.from_openai(openai.OpenAI(api_key=config.OPENAI_API_KEY))
 
 
 def is_valid_sql(query):
     parsed = sqlvalidator.parse(query)
     return parsed.is_valid()
 
+def get_embedding(text):
+    result = openai.embeddings.create(
+        input=[text],
+        model="text-embedding-3-small"
+    )
+    embedding = result.data[0].embedding 
+    return embedding
+
 
 def build_sql_generate_prompt(user_query):
     prompt = f"""
-    You are a PostgreSQL expert. You only respond with PostgreSQL commands for the question asked by the user.
+        You are a PostgreSQL expert and you perform vector similarity search. 
 
-    You are given a database schema:
-        Schema: public
-        Table: us_attractions
-        Columns:
-        - id INTEGER PRIMARY KEY
-        - name VARCHAR(250)
-        - main_category VARCHAR(250)
-        - rating REAL
-        - reviews REAL
-        - categories VARCHAR(250)
-        - address VARCHAR(250)
-        - city VARCHAR(250)
-        - country VARCHAR(250)
-        - state VARCHAR(250)
-        - zipcode INTEGER
-        - broader_category VARCHAR(250)
-        - weighted_score REAL
-        - weighted_average REAL
-        - all_cities VARCHAR(250)
+        You only respond with PostgreSQL commands for the question asked by the user.
 
-    The us_attractions table only has information for USA only. The values under the country column are all 'USA'. 
+        You are given a database schema:
+            Schema: public
+            Table: us_attractions
+            Columns:
+            - id INTEGER PRIMARY KEY
+            - name VARCHAR(250)
+            - main_category VARCHAR(250)
+            - rating REAL
+            - reviews REAL
+            - categories VARCHAR(250)
+            - address VARCHAR(250)
+            - city VARCHAR(250)
+            - country VARCHAR(250)
+            - state VARCHAR(250)
+            - zipcode INTEGER
+            - broader_category VARCHAR(250)
+            - weighted_score REAL
+            - weighted_average REAL
+            - all_cities VARCHAR(250)
+            - embedding VECTOR
 
-    Translate the following user question into PostgreSQL query statement:
+        The us_attractions table only has information for USA only. The values under the country column are all 'USA'.
 
-    "{user_query}"
-    Instructions:
-    - Write PostgreSQL query using the "public" schema for all tables (e.g., public.us_attraction).
-    - If the US State label is given in full, search for the abbreviated form in all caps.
-    - Always perform LOWER() on all string type comparisons, filtering, etc.
-    - If you cannot respond a PostgreSQL command respond with 'Sorry, no relevant data was found in the database for your query.'. Don't respond with anything else.
-    """
+        Always include the 'id' column in the SQL command.
+
+        Select a few relevant columns dynamically based on the question, such as id, name, rating, main_category, etc.
+
+        Always include the following vector similarity comparison in your query to rank results by similarity:
+
+        embedding::vector <=> %(embedding)s AS distance
+
+        where %(embedding)s is a placeholder. You are to leave the placeholder as instructed.
+
+        Translate the following user question into PostgreSQL query statement:
+
+        '{user_query}'
+
+        Instructions:
+        - Write PostgreSQL query using the "public" schema for all tables (e.g., public.us_attractions).
+        - Order results by this distance (ascending, with closest matches first)
+        - Limis results to 5 rows unless another limit is specified by the user
+        - Does NOT include any WHERE clauses, filters, or other conditions because the vector similarity ranking fully determines relevance
+        - Always returns the vector distance column named "distance"
+        - If you cannot respond a PostgreSQL command respond with 'Sorry, no relevant data was found in the database for your query.'. Don't respond with anything else.
+        """
     return prompt
 
 
@@ -87,9 +112,14 @@ def generate_sql_command(prompt):
     return response
 
 
-def retrieve_from_postgres(cursor, sql_query):
-    cursor.execute(sql_query)
-    rows = cursor.fetchall()
+def execute_sql_query(cursor, sql_query, params):
+    rows = list()
+    if is_valid_sql(sql_query):
+        if params:
+            cursor.execute(sql_query, params)
+        else:
+            cursor.execute(sql_query)
+        rows = cursor.fetchall()
     return rows
 
 
@@ -105,12 +135,24 @@ def generate_answer(prompt):
 
 def rag_pipeline(user_question, psycopg_cursor):
     query_result = list()
+
+    # 1-Process user query
+    user_question_embedding = get_embedding(user_question)
+    user_question_embedding_str = '[' + ','.join(map(str, user_question_embedding)) + ']'
+
+    # 2-General SQL command
     sql_prompt = build_sql_generate_prompt(user_question)
     text2sql_response = generate_sql_command(sql_prompt)
     print(text2sql_response)
+
+    # 3-Query with generated SQL command
     if is_valid_sql(text2sql_response.sql_command):
-        query_result = retrieve_from_postgres(psycopg_cursor, text2sql_response.sql_command)
+        sql_params = {
+            'embedding': user_question_embedding_str
+        }
+        query_result = execute_sql_query(psycopg_cursor, text2sql_response.sql_command, sql_params)
         formatted_query_result = [", ".join(map(str, row)) for row in query_result]
+        # 3b- Process and generate final response
         if not query_result:
             # No data found guardrail
             answer = "Sorry, no relevant data was found in the database for your query."
@@ -123,7 +165,7 @@ def rag_pipeline(user_question, psycopg_cursor):
     final_result = {
         "answer": answer,
         "question": user_question,
-        # "retrieved_context_ids": [row[0] for row in query_result],
+        "retrieved_context_ids": [row[0] for row in query_result],
         "retrieved_context": formatted_query_result,
         "generated_sql": text2sql_response.sql_command
     }
