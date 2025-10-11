@@ -24,3 +24,13 @@ services:
       - ./postgres_data:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
 
+  flight_mcp_server:
+    build:
+      context: .
+      dockerfile: Dockerfile.flight_mcp
+    ports:
+      - 8003:8000
+    env_file:
+      - .env
+    restart: unless-stopped
+

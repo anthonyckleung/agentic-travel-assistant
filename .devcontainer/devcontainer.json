@@ -8,7 +8,7 @@
 		"ghcr.io/va-h/devcontainers-features/uv:1": {},
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
 	},
-	"runArgs": ["--add-host=host.docker.internal:host-gateway"],
+	"runArgs": ["--add-host=host.docker.internal:host-gateway", "--network", "agentic-travel-assistant_default"],
 	"postCreateCommand": "sudo apt-get update && sudo apt-get install -y iputils-ping && pip install streamlit",
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
