@@ -1,44 +1,35 @@
 from mcp.server.fastmcp import FastMCP
 import sys
 import os
-import httpx
 import json
+import asyncio
 from typing import Dict, Any, Optional, List
-from core.config import config
+from src.flight_mcp_server.core.config import config
+from src.flight_mcp_server.utils import flight_api_request, format_flight_results
 
-RAPIDAPI_BASE_URL = config.RAPIDAPI_BASE_URL
-RAPIDAPI_API_KEY = config.RAPIDAPI_API_KEY
+mcp = FastMCP("flights")
 
-mcp = FastMCP("google-flights-mcp")
+mcp.settings.host = "0.0.0.0"
+mcp.settings.port = 8000
+mcp.settings.sse_path = "/mcp"
 
 
 @mcp.tool()
-async def flight_api_request(endpoint:str, params: Dict[str, Any]=None) -> Dict[str, Any]:
-    """Make a request to the TripAdvisor API"""
-    if not RAPIDAPI_API_KEY:
-        return {"error": "TripAdvisor API key not configured. Set RAPIDAPI_API_KEY environment variable."}
+async def get_flights(params: Dict[str, Any]=None, top_k=3) -> str:
+    """
+    Get the top k contexts, each representing a flight itinerary for a given query.
 
-    headers = {
-        "x-rapidapi-host": RAPIDAPI_BASE_URL, 
-        "x-rapidapi-key": RAPIDAPI_API_KEY,
-    }
+    Args:
+        query: The query to get top k context for
+        top_k: the number of context chunks to retrieve
 
-    if params is None:
-        params = {}
-
-    url = f"https://{RAPIDAPI_BASE_URL}/api/v1/{endpoint}"
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(url, headers=headers, params=params, timeout=30.0)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            return {
-                "error": f"HTTP error occurred: {e}",
-                "details": str(e)
-            }
+    Returns:
+        A dictionary of the top k context chunks, each representing flight itinerary for a given query
+    """
+    flight_data = await flight_api_request(params, top_k)
+    formatted_flight_data = format_flight_results(flight_data, top_k)
+    return formatted_flight_data
 
 
 if __name__ == "__main__":
-    mcp.run(transport='http', host="0.0.0.0", port=8000)
+    mcp.run(transport="streamable-http")
