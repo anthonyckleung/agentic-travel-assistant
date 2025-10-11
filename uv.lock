@@ -30,7 +30,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = ">=2.12.4" },
+    { name = "fastmcp", specifier = "==2.12.4" },
     { name = "groq", specifier = ">=0.32.0" },
     { name = "instructor", specifier = ">=1.11.3" },
     { name = "ipykernel", specifier = ">=6.30.1" },
