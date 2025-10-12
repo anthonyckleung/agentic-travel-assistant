@@ -1,18 +1,48 @@
 import streamlit as st
 import psycopg2
+import requests
 from openai import OpenAI
 from retrieval import rag_pipeline
 
-from core.config import config
+from src.chatbot_ui.core.config import settings
 
-conn = psycopg2.connect(
-    dbname="postgresdb",
-    user=config.POSTGRES_USERNAME,
-    password=config.POSTGRES_PASSWORD,
-    host="host.docker.internal",  # e.g., "localhost"
-    port="5433"        # default PostgreSQL port
-)
-cursor = conn.cursor()
+
+
+
+def api_call(method, url, **kwargs):
+
+    def _show_error_popup(message):
+        """Show error message as a popup in the top-right corner."""
+        st.session_state["error_popup"] = {
+            "visible": True,
+            "message": message,
+        }
+
+    try:
+        response = getattr(requests, method)(url, **kwargs)
+
+        try:
+            response_data = response.json()
+        except requests.exceptions.JSONDecodeError:
+            response_data = {"message": "Invalid response format from server"}
+
+        if response.ok:
+            return True, response_data
+
+        return False, response_data
+
+    except requests.exceptions.ConnectionError:
+        _show_error_popup("Connection error. Please check your network connection.")
+        return False, {"message": "Connection error"}
+    except requests.exceptions.Timeout:
+        _show_error_popup("The request timed out. Please try again later.")
+        return False, {"message": "Request timeout"}
+    except Exception as e:
+        _show_error_popup(f"An unexpected error occurred: {str(e)}")
+        return False, {"message": str(e)}
+
+
+
 
 ## Lets create a sidebar with a dropdown for the model list and providers
 with st.sidebar:
@@ -62,6 +92,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Chat input
 if prompt := st.chat_input("Hello! How can I assist you today?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -69,6 +100,7 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
 
     with st.chat_message("assistant"):
         # output = run_llm(client, st.session_state.messages)
-        output = rag_pipeline(prompt, cursor)
+        status, output = api_call("post", f"{settings.API_URL}/rag", json={"query": prompt})
+        # output = rag_pipeline(prompt, cursor)
         response_content = output.get("answer", str(output))
     st.session_state.messages.append({"role": "assistant", "content": response_content})

@@ -9,7 +9,7 @@ services:
       - .env
     restart: unless-stopped
     volumes:
-      - ./src/chatbot-ui:/app/src/chatbot-ui
+      - ./src/chatbot_ui:/app/src/chatbot_ui
   postgres:
     image: pgvector/pgvector:pg16
     ports:
@@ -23,6 +23,18 @@ services:
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    ports:
+      - 8000:8000
+    env_file:
+      - .env
+    restart: unless-stopped
+    # volumes:
+    #   - ./src/api:/app/src/api
 
   flight_mcp_server:
     build:

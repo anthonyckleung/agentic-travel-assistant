@@ -18,16 +18,9 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables or .env file."""
 
-    API_URL: str = "http://api:8000"
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-        extra="ignore"
-    )
-
+    DEFAULT_TIMEOUT: float = 30.0
+    VERSION: str = "0.1.0"
 
 config = Config()
 settings = Settings()
